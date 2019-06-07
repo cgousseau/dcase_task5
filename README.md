@@ -36,7 +36,10 @@ The metrics of the challenge are computed:
 '*' is the timestamp
 
 ## Results:
-Coarse level evaluation:
+
+### Coarse level model
+
+#### Coarse level evaluation:
 ======================
  * Micro AUPRC:           0.8261913279303387
  * Micro F1-score (@0.5): 0.743362831858407
@@ -51,7 +54,9 @@ Coarse level evaluation:
       - 7: 0.9479529102624412
       - 8: 0.11418664692824343
 
-Fine level evaluation:
+### Fine level model
+
+#### Fine level evaluation:
 ======================
  * Micro AUPRC:           0.7014738063991779
  * Micro F1-score (@0.5): 0.6127583108715184
@@ -65,7 +70,8 @@ Fine level evaluation:
       - 6: 0.11773996273721583
       - 7: 0.8865961250349249
       - 8: 0.18167575040995732
-Coarse level evaluation:
+
+#### Coarse level evaluation:
 ======================
  * Micro AUPRC:           0.7740104836386648
  * Micro F1-score (@0.5): 0.6375779162956368
