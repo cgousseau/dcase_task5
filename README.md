@@ -25,7 +25,7 @@ The model is a VGG-16 network pre-trained on the ImageNet dataset. For more deta
 
 This trains a model using the input features in 'features/mel'
 
-## Geneating output files
+## Generating output files
 Then an output file following the Dcase challenge format is generated:
 
 ``` python generate_predictions.py data/annotations.csv  dcase-ust-taxonomy.yaml features/mel  output baseline_coarse ```
