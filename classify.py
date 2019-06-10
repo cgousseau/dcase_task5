@@ -175,9 +175,9 @@ def prepare_data(train_file_idxs, test_file_idxs, embeddings,
 
 def createmodel(dropout_rate=0.3,l2_reg=0.1,ntime=431,nfreq=64,nchannel=3,num_classes=8):
     
-    input = Input(shape=(nfreq,ntime,nchannel))
-    #vgg = vgg16.VGG16(include_top=False, weights='imagenet', input_shape=(nfreq,ntime,nchannel))
-    #output = vgg.layers[-1].output
+    #input = Input(shape=(nfreq,ntime,nchannel))
+    vgg = vgg16.VGG16(include_top=False, weights='imagenet', input_shape=(nfreq,ntime,nchannel))
+    output = vgg.layers[-1].output
 
     output = keras.layers.Flatten()(input)
     
@@ -196,8 +196,8 @@ def createmodel(dropout_rate=0.3,l2_reg=0.1,ntime=431,nfreq=64,nchannel=3,num_cl
     output = keras.layers.Dropout(dropout_rate)(output)
     output = keras.layers.Dense(num_classes, activation='sigmoid',kernel_regularizer=keras.regularizers.l2(l2_reg))(output)
 
-    model = Model(input, output)
-    #model = Model(vgg.input, output)
+    #model = Model(input, output)
+    model = Model(vgg.input, output)
     
     return model
 
