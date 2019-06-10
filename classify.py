@@ -15,9 +15,7 @@ from keras.models import Model
 from keras import regularizers
 from keras.optimizers import Adam
 import keras.backend as K
-from sklearn.preprocessing import StandardScaler
 from keras.applications import vgg16
-from sklearn.metrics import roc_auc_score
 from keras.preprocessing.image import ImageDataGenerator
 
 ## HELPERS
@@ -108,10 +106,10 @@ def get_file_targets(annotation_data, labels):
 
     return np.array(target_list)
 
-def prepare_framewise_data(train_file_idxs, test_file_idxs, embeddings,
+def prepare_data(train_file_idxs, test_file_idxs, embeddings,
                            target_list, standardize=True):
     """
-    Prepare inputs and targets for framewise training using training and evaluation indices.
+    Prepare inputs and targets for training using training and evaluation indices.
     Parameters
     ----------
     train_file_idxs
@@ -170,62 +168,18 @@ def prepare_framewise_data(train_file_idxs, test_file_idxs, embeddings,
 
     return X_train, y_train, X_valid, y_valid
 
-def softmax(X, theta=1.0, axis=None):
-    """
-    Compute the softmax of each element along an axis of X.
-
-    Courtesy of https://stackoverflow.com/a/42797620
-
-    Parameters
-    ----------
-    X: ND-Array. Probably should be floats.
-    theta (optional): float parameter, used as a multiplier
-        prior to exponentiation. Default = 1.0
-    axis (optional): axis to compute values along. Default is the
-        first non-singleton axis.
-
-    Returns an array the same size as X. The result will sum to 1
-    along the specified axis.
-    """
-
-    # make X at least 2d
-    y = np.atleast_2d(X)
-
-    # find axis
-    if axis is None:
-        axis = next(j[0] for j in enumerate(y.shape) if j[1] > 1)
-
-    # multiply y against the theta parameter,
-    y = y * float(theta)
-
-    # subtract the max for numerical stability
-    y = y - np.expand_dims(np.max(y, axis = axis), axis)
-
-    # exponentiate y
-    y = np.exp(y)
-
-    # take the sum along the specified axis
-    ax_sum = np.expand_dims(np.sum(y, axis = axis), axis)
-
-    # finally: divide elementwise
-    p = y / ax_sum
-
-    # flatten if X was 1D
-    if len(X.shape) == 1: p = p.flatten()
-
-    return p
-
 
 ## MODEL CONSTRUCTION
 
 ## Création du modèle
 
-def createmodel(dropout_rate=0.3,l2_reg=0.1,ntime=431,nfreq=64,nchannel=3):
+def createmodel(dropout_rate=0.3,l2_reg=0.1,ntime=431,nfreq=64,nchannel=3,num_classes=8):
     
-    vgg = vgg16.VGG16(include_top=False, weights='imagenet', input_shape=(nfreq,ntime,nchannel))
-    output = vgg.layers[-1].output
+    input = Input(shape=(nfreq,ntime,nchannel))
+    #vgg = vgg16.VGG16(include_top=False, weights='imagenet', input_shape=(nfreq,ntime,nchannel))
+    #output = vgg.layers[-1].output
 
-    output = keras.layers.Flatten()(output)
+    output = keras.layers.Flatten()(input)
     
     output = keras.layers.Dense(1024,kernel_regularizer=keras.regularizers.l2(l2_reg))(output)
     output = keras.layers.Activation('relu')(output)
@@ -240,9 +194,10 @@ def createmodel(dropout_rate=0.3,l2_reg=0.1,ntime=431,nfreq=64,nchannel=3):
     output = keras.layers.Activation('relu')(output)
     
     output = keras.layers.Dropout(dropout_rate)(output)
-    output = keras.layers.Dense(8, activation='sigmoid',kernel_regularizer=keras.regularizers.l2(l2_reg))(output)
+    output = keras.layers.Dense(num_classes, activation='sigmoid',kernel_regularizer=keras.regularizers.l2(l2_reg))(output)
 
-    model = Model(vgg.input, output)
+    model = Model(input, output)
+    #model = Model(vgg.input, output)
     
     return model
 
@@ -254,13 +209,15 @@ class Metrics(keras.callbacks.Callback):
 
     def on_epoch_end(self, batch, logs={}):
         X_val, y_val = self.validation_data[0], self.validation_data[1]
-		
-        #y_val=np.delete(y_val,27,1)
-        #y_val=np.delete(y_val,22,1)
-        #y_val=np.delete(y_val,18,1)
-        #y_val=np.delete(y_val,13,1)
-        #y_val=np.delete(y_val,8,1)
-        #y_val=np.delete(y_val,3,1)
+    
+        if y_val.shape[1]>8:
+            y_val=np.delete(y_val,27,1)
+            y_val=np.delete(y_val,22,1)
+            y_val=np.delete(y_val,18,1)
+            y_val=np.delete(y_val,13,1)
+            y_val=np.delete(y_val,8,1)
+            y_val=np.delete(y_val,3,1)
+        
         y_pred = np.asarray(self.model.predict(X_val))
 
         res=[]
@@ -287,9 +244,15 @@ class Metrics(keras.callbacks.Callback):
         
         print('micro-AUPRC')
         print(round(s,4))
-		
-        if s>0.805:
-            self.model.save('bestmodels/model'+str(round(s,4))+'.hdf5')
+    
+        if y_val.shape[1]>8:
+            if s>0.05:
+                os.makedirs('bestmodels/fine', exist_ok=True)
+                self.model.save('bestmodels/fine/model'+str(round(s,4))+'.hdf5')
+        else:
+            if s>0.05:
+                os.makedirs('bestmodels/coarse', exist_ok=True)
+                self.model.save('bestmodels/coarse/model'+str(round(s,4))+'.hdf5')            
             
         
         return 
@@ -380,23 +343,16 @@ def train_model(model, X_train, y_train, X_valid, y_valid, output_dir,
 
     if loss is None:
         loss = 'binary_crossentropy'
-    # TODO: Update for our modified accuracy metric
-    metrics = []
-    #set_random_seed(random_state)
+
 
     os.makedirs(output_dir, exist_ok=True)
 
     # Set up callbacks
     cb = []
     # checkpoint
-    model_weight_file = os.path.join(output_dir, 'model-{epoch:02d}.hdf5')
-
-    #cb.append(keras.callbacks.ModelCheckpoint(model_weight_file,
-    #                                          save_best_only=False))
-											  
     m=Metrics()
     cb.append(m)
-	
+
     # monitor losses
     history_csv_file = os.path.join(output_dir, 'history.csv')
     cb.append(keras.callbacks.CSVLogger(history_csv_file, append=True,
@@ -404,10 +360,7 @@ def train_model(model, X_train, y_train, X_valid, y_valid, output_dir,
 
     model.summary()
     # Fit model
-    model.compile(Adam(lr=learning_rate), loss=loss, metrics=metrics)
-    #history = model.fit(
-    #    x=X_train, y=y_train, batch_size=batch_size, epochs=num_epochs,
-    #    validation_data=(X_valid, y_valid), callbacks=cb, verbose=1)
+    model.compile(Adam(lr=learning_rate), loss=loss)
 
     datagen = ImageDataGenerator(width_shift_range=0.1,height_shift_range=0.1)
     training_generator = MixupGenerator(X_train, y_train, batch_size=batch_size, alpha=0.85, datagen=datagen)()
@@ -419,13 +372,13 @@ def train_model(model, X_train, y_train, X_valid, y_valid, output_dir,
 
 ## MODEL TRAINING
 
-def train_framewise(annotation_path, taxonomy_path, emb_dir, output_dir, exp_id,
+def train(annotation_path, taxonomy_path, emb_dir, output_dir, exp_id,
                     label_mode="fine", batch_size=64, num_epochs=100,
                     patience=20, learning_rate=1e-4, hidden_layer_size=128,
                     num_hidden_layers=0, l2_reg=1e-5, standardize=True,
                     timestamp=None):
     """
-    Train and evaluate a framewise MLP model.
+    Train and evaluate a model.
 
     Parameters
     ----------
@@ -450,13 +403,13 @@ def train_framewise(annotation_path, taxonomy_path, emb_dir, output_dir, exp_id,
     """
 
     # Load annotations and taxonomy
-    print("* Loading dataset.")
+    print("* Loading annotations...")
     annotation_data = pd.read_csv(annotation_path).sort_values('audio_filename')
     with open(taxonomy_path, 'r') as f:
         taxonomy = yaml.load(f, Loader=yaml.Loader)
 
     file_list = annotation_data['audio_filename'].unique().tolist()
-
+    
     full_fine_target_labels = ["{}-{}_{}".format(coarse_id, fine_id, fine_label)
                                for coarse_id, fine_dict in taxonomy['fine'].items()
                                for fine_id, fine_label in fine_dict.items()]
@@ -464,8 +417,6 @@ def train_framewise(annotation_path, taxonomy_path, emb_dir, output_dir, exp_id,
                             if x.split('_')[0].split('-')[1] != 'X']
     coarse_target_labels = ["_".join([str(k), v])
                             for k,v in taxonomy['coarse'].items()]
-
-    print("* Preparing training data.")
 
     # For fine, we include incomplete labels in targets for computing the loss
     fine_target_list = get_file_targets(annotation_data, full_fine_target_labels)
@@ -481,17 +432,18 @@ def train_framewise(annotation_path, taxonomy_path, emb_dir, output_dir, exp_id,
     else:
         raise ValueError("Invalid label mode: {}".format(label_mode))
 
-    num_classes = len(labels)
-    print(num_classes)
-    embeddings = load_embeddings(file_list, emb_dir)
-	
-    X_train, y_train, X_valid, y_valid = prepare_framewise_data(train_file_idxs, test_file_idxs, embeddings,
-                                 target_list, standardize=standardize)
 
-    print(X_train.shape)
+    print('* Loading mel-spectrograms...')
+    embeddings = load_embeddings(file_list, emb_dir)
+
+    print('* Preparing data...')
+    X_train, y_train, X_valid, y_valid = prepare_data(train_file_idxs, test_file_idxs, embeddings,target_list, standardize=standardize)
     nsamples, nfreq, ntime, nchannel = X_train.shape
-	
-    model = createmodel(dropout_rate=0.3,l2_reg=0.1,ntime=431,nfreq=64,nchannel=3)
+    num_classes = len(labels)
+
+    print('* Creating the model...')
+    dropout_rate=0.3
+    model = createmodel(dropout_rate,l2_reg,ntime,nfreq,nchannel,num_classes)
 
     if not timestamp:
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -555,19 +507,19 @@ def train_framewise(annotation_path, taxonomy_path, emb_dir, output_dir, exp_id,
     else:
         loss_func = None
 
-    print("* Training model.")
-    print(y_train.shape)
+    print("* Training model...")
     history = train_model(model, X_train, y_train, X_valid, y_valid,
                           results_dir, loss=loss_func, batch_size=batch_size,
                           num_epochs=num_epochs, patience=patience,
                           learning_rate=learning_rate)
 
-    print("* Saving model predictions.")
+    print("* Computing model predictions...")
     results = {}
-    results['train'] = predict_framewise(embeddings, train_file_idxs, model)
-    results['test'] = predict_framewise(embeddings, test_file_idxs, model)
+    results['train'] = predict(embeddings, train_file_idxs, model)
+    results['test'] = predict(embeddings, test_file_idxs, model)
     results['train_history'] = history.history
 
+    print('* Saving model predictions...')
     results_path = os.path.join(results_dir, "results.json")
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
@@ -579,9 +531,9 @@ def train_framewise(annotation_path, taxonomy_path, emb_dir, output_dir, exp_id,
 
 ## MODEL EVALUATION
 
-def predict_framewise(embeddings, test_file_idxs, model, scaler=None):
+def predict(embeddings, test_file_idxs, model, scaler=None):
     """
-    Evaluate the output of a framewise classification model.
+    Evaluate the output of a classification model.
 
     Parameters
     ----------
@@ -720,7 +672,7 @@ if __name__ == '__main__':
     parser.add_argument("--patience", type=int, default=20)
     parser.add_argument("--no_standardize", action='store_true')
     parser.add_argument("--label_mode", type=str, choices=["fine", "coarse"],
-                        default='fine')
+                        default='coarse')
 
     args = parser.parse_args()
 
@@ -732,7 +684,7 @@ if __name__ == '__main__':
     with open(kwarg_file, 'w') as f:
         json.dump(vars(args), f, indent=2)
 
-    train_framewise(args.annotation_path,
+    train(args.annotation_path,
                     args.taxonomy_path,
                     args.emb_dir,
                     args.output_dir,

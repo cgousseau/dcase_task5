@@ -105,10 +105,10 @@ def get_file_targets(annotation_data, labels):
 
     return np.array(target_list)
 
-def prepare_framewise_data(train_file_idxs, test_file_idxs, embeddings,
+def prepare_data(train_file_idxs, test_file_idxs, embeddings,
                            target_list, standardize=True):
     """
-    Prepare inputs and targets for framewise training using training and evaluation indices.
+    Prepare inputs and targets for training using training and evaluation indices.
     Parameters
     ----------
     train_file_idxs
@@ -169,13 +169,13 @@ def prepare_framewise_data(train_file_idxs, test_file_idxs, embeddings,
 
 ## MODEL TRAINING
 
-def train_framewise(annotation_path, taxonomy_path, emb_dir_val, output_dir, exp_id, modelsdir,
+def evaluate(annotation_path, taxonomy_path, emb_dir_val, output_dir, exp_id, modelsdir,
                     label_mode="fine", batch_size=64, num_epochs=100,
                     patience=20, learning_rate=1e-4, hidden_layer_size=128,
                     num_hidden_layers=0, l2_reg=1e-5, standardize=True,
                     timestamp=None):
     """
-    Train and evaluate a framewise MLP model.
+    evaluate a model.
 
     Parameters
     ----------
@@ -200,7 +200,7 @@ def train_framewise(annotation_path, taxonomy_path, emb_dir_val, output_dir, exp
     """
 
     # Load annotations and taxonomy
-    print("* Loading dataset.")
+    print("* Loading annotations...")
     annotation_data = pd.read_csv(annotation_path).sort_values('audio_filename')
     with open(taxonomy_path, 'r') as f:
         taxonomy = yaml.load(f, Loader=yaml.Loader)
@@ -214,8 +214,6 @@ def train_framewise(annotation_path, taxonomy_path, emb_dir_val, output_dir, exp
                             if x.split('_')[0].split('-')[1] != 'X']
     coarse_target_labels = ["_".join([str(k), v])
                             for k,v in taxonomy['coarse'].items()]
-
-    print("* Preparing training data.")
 
     # For fine, we include incomplete labels in targets for computing the loss
     fine_target_list = get_file_targets(annotation_data, full_fine_target_labels)
@@ -233,21 +231,20 @@ def train_framewise(annotation_path, taxonomy_path, emb_dir_val, output_dir, exp
 
     num_classes = len(labels)
 
-    print('* loading validation data')
+    print('* loading mel-spectrograms...')
     embeddings_val = load_embeddings(file_list, emb_dir_val)
-		
-    X_train, y_train, X_valid, y_valid = prepare_framewise_data(train_file_idxs, test_file_idxs, embeddings_val,
+
+    print("* Preparing data...")
+    X_train, y_train, X_valid, y_valid = prepare_data(train_file_idxs, test_file_idxs, embeddings_val,
                                  target_list, standardize=standardize)
-								 
-    print(X_train.shape)
-    print(X_valid.shape)
+
     nsamples, nfreq, ntime, nchannel = X_train.shape
-	
+
     if not timestamp:
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
     results_dir = os.path.join(output_dir, exp_id, timestamp)
-
+    
     if label_mode == "fine":
         full_coarse_to_fine_terminal_idxs = np.cumsum(
             [len(fine_dict) for fine_dict in taxonomy['fine'].values()])
@@ -305,33 +302,33 @@ def train_framewise(annotation_path, taxonomy_path, emb_dir_val, output_dir, exp
     else:
         loss_func = None
 
-    print("* Loading model.")
+    print("* Loading models...")
     model_list=[]
-    for modelname in os.listdir(modelsdir):
+    for modelname in os.listdir(modelsdir+'/'+str(label_mode)):
         if label_mode=='coarse':
-            model=load_model(modelsdir+'/'+modelname)
+            model=load_model(modelsdir+'/coarse/'+modelname)
         else:
-            model=load_model(modelsdir+'/'+modelname, custom_objects={'masked_loss': loss_func})		    
+            model=load_model(modelsdir+'/fine/'+modelname, custom_objects={'masked_loss': loss_func})		    
         print(modelname+' loaded')
         model_list.append(model)
 
-    print("* Saving model predictions.")
+    print("* Computing predictions...")
     results_val = {}
-
-    results_val['test'] = predict_framewise(embeddings_val, target_list,test_file_idxs,model_list,label_mode)
+    results_val['test'] = predict(embeddings_val, target_list,test_file_idxs,model_list,label_mode)
 
     results_path = os.path.join(results_dir, "results.json")
 
+    print('* Saving predictions...')
     for aggregation_type, y_pred in results_val['test'].items():
         generate_output_file(y_pred, test_file_idxs, results_dir, file_list,
                              aggregation_type, label_mode, taxonomy)
 
-							 
+                        
 ## MODEL EVALUATION
 
-def predict_framewise(embeddings_val,target_list,test_file_idxs, model_list,label_mode):
+def predict(embeddings_val,target_list,test_file_idxs, model_list,label_mode):
     """
-    Evaluate the output of a framewise classification model.
+    Evaluate the output of a classification model.
 
     Parameters
     ----------
@@ -344,7 +341,7 @@ def predict_framewise(embeddings_val,target_list,test_file_idxs, model_list,labe
     -------
     results
     """
-	
+
     y_pred_max = []
     y_pred_mean = []
     y_pred_softmax = []
@@ -366,18 +363,17 @@ def predict_framewise(embeddings_val,target_list,test_file_idxs, model_list,labe
     X_valid[:,:,:,2]=(X_valid[:,:,:,2]-meanv[2])/stdv[2]
     y_valid=np.array(y_valid)
 
-    a=np.array(auprc_classwise(model_list,X_valid,y_valid,label_mode))
-	
-    print(a)
-	
+    a=auprc_classwise(model_list,X_valid,y_valid,label_mode)
+    
+    print(np.array(a))
+
     idx=np.argmax(a,axis=0)
 
     if label_mode=='coarse':
         predval=np.zeros((len(X_valid),8))
     else:
-	    predval=np.zeros((len(X_valid),23))
+        predval=np.zeros((len(X_valid),23))
 
-    print(idx)
     for i in range(predval.shape[1]):
         print(i)
         print(idx[i])
@@ -395,48 +391,48 @@ def predict_framewise(embeddings_val,target_list,test_file_idxs, model_list,labe
 
 def auprc_classwise(models,X_valid,y_valid,label_mode):
     
-	if label_mode=='fine':
-		y_valid=np.delete(y_valid,27,1)
-		y_valid=np.delete(y_valid,22,1)
-		y_valid=np.delete(y_valid,18,1)
-		y_valid=np.delete(y_valid,13,1)
-		y_valid=np.delete(y_valid,8,1)
-		y_valid=np.delete(y_valid,3,1)
-	
-	score=[]
-	for model in models:
-		ypred=model.predict(X_valid)
-		ytrue=y_valid
-		resi=[]
-		
-		for c in range(ypred.shape[1]):
-			ypredi=np.reshape(ypred[:,c],(len(ypred),1))
-			ytruei=np.reshape(ytrue[:,c],(len(ytrue),1))
-			res=[]
-			for t in np.linspace(0,1,1000):
-				yp=1*(ypredi>t)
-				true_positives = np.sum(yp*ytruei)
-				predicted_positives = np.sum(yp)
-				possible_positives = np.sum(ytruei)
-				p=true_positives / (predicted_positives + K.epsilon())
-				r=true_positives / (possible_positives + K.epsilon())
-				res.append([p,r])
-			resa=np.array(res)
-			resasort=resa[resa[:,0].argsort()]
-			resasortu=[]
-			for p in np.unique(resasort[:,0]):
-				resasortu.append([p,np.max(resasort[resasort[:,0]==p][:,1])])
-			resasortu[0]=[0,1]    
-			resasortua=np.array(resasortu)
-			s=0
-			for i in range(len(resasortua)-1):
-				dx=resasortua[i+1,0]-resasortua[i,0]
-				fx=0.5*(resasortua[i+1,1]+resasortua[i,1])
-				s=s+fx*dx   
-			resi.append(s)
-		score.append(resi)
-	return(score)
-				
+    if label_mode=='fine':
+        y_valid=np.delete(y_valid,27,1)
+        y_valid=np.delete(y_valid,22,1)
+        y_valid=np.delete(y_valid,18,1)
+        y_valid=np.delete(y_valid,13,1)
+        y_valid=np.delete(y_valid,8,1)
+        y_valid=np.delete(y_valid,3,1)
+    
+    score=[]
+    for model in models:
+        ypred=model.predict(X_valid)
+        ytrue=y_valid
+        resi=[]
+        
+        for c in range(ypred.shape[1]):
+            ypredi=np.reshape(ypred[:,c],(len(ypred),1))
+            ytruei=np.reshape(ytrue[:,c],(len(ytrue),1))
+            res=[]
+            for t in np.linspace(0,1,1000):
+                yp=1*(ypredi>t)
+                true_positives = np.sum(yp*ytruei)
+                predicted_positives = np.sum(yp)
+                possible_positives = np.sum(ytruei)
+                p=true_positives / (predicted_positives + K.epsilon())
+                r=true_positives / (possible_positives + K.epsilon())
+                res.append([p,r])
+            resa=np.array(res)
+            resasort=resa[resa[:,0].argsort()]
+            resasortu=[]
+            for p in np.unique(resasort[:,0]):
+                resasortu.append([p,np.max(resasort[resasort[:,0]==p][:,1])])
+            resasortu[0]=[0,1]    
+            resasortua=np.array(resasortu)
+            s=0
+            for i in range(len(resasortua)-1):
+                dx=resasortua[i+1,0]-resasortua[i,0]
+                fx=0.5*(resasortua[i+1,1]+resasortua[i,1])
+                s=s+fx*dx   
+            resi.append(s)
+        score.append(resi)
+    return(score)
+            
 
 def generate_output_file(y_pred, test_file_idxs, results_dir, file_list,
                          aggregation_type, label_mode, taxonomy):
@@ -547,12 +543,12 @@ if __name__ == '__main__':
     with open(kwarg_file, 'w') as f:
         json.dump(vars(args), f, indent=2)
 
-    train_framewise(args.annotation_path,
+    evaluate(args.annotation_path,
                     args.taxonomy_path,
                     args.emb_dir_val,
                     args.output_dir,
                     args.exp_id,
-					modelsdir=args.modelsdir,
+                    modelsdir=args.modelsdir,
                     label_mode=args.label_mode,
                     batch_size=args.batch_size,
                     num_epochs=args.num_epochs,
