@@ -5,11 +5,14 @@ The code from the baseline (https://github.com/sonyc-project/urban-sound-tagging
 
 It is part of my master thesis internship done at Orange Labs Lannion
 
+## Setting up an environment
+You will need the environment presented in the baseline (https://github.com/sonyc-project/urban-sound-tagging-baseline) + two additional libraries: soundfile and librosa (using 'pip install <name_of_the_library>'). Using tensorflow-gpu is recommended.
+
 ## Dowloading the data
 You can download the data at: https://zenodo.org/record/3233082#.XPpfYCBS-Uk and store the folders 'train' and 'validate' into the folder 'data'
 
 ## Extracting the input features
-The feature engineering uses the method presented in the book \textit{Hands-On Transfer Learning with Python}. First the recordings are re-sampled using a sampling rate of 22050Hz. Then three features are extracted from these signals:
+The feature engineering uses the method presented in the book 'Hands-On Transfer Learning with Python'. First the recordings are re-sampled using a sampling rate of 22050Hz. Then three features are extracted from these signals:
 - the mel-spectrograms using 64 mel-bands and a hop length of 512 thus resulting a 64 rows x 431 colums image
 - the averaged value of the harmonic and percussive components (64 rows x 431 colums image)
 - the derivative of the log-mel spectrograms (64 rows x 431 colums image)
