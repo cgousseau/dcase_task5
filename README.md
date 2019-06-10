@@ -6,7 +6,7 @@ The code from the baseline (https://github.com/sonyc-project/urban-sound-tagging
 It is part of my master thesis internship done at Orange Labs Lannion
 
 ## Dowloading the data
-You can download the data at: https://zenodo.org/record/3233082#.XPpfYCBS-Uk
+You can download the data at: https://zenodo.org/record/3233082#.XPpfYCBS-Uk and store the folders 'train' and 'validate' into the folder 'data'
 
 ## Extracting the input features
 The feature engineering uses the method presented in the book \textit{Hands-On Transfer Learning with Python}. First the recordings are re-sampled using a sampling rate of 22050Hz. Then three features are extracted from these signals:
@@ -14,7 +14,7 @@ The feature engineering uses the method presented in the book \textit{Hands-On T
 - the averaged value of the harmonic and percussive components (64 rows x 431 colums image)
 - the derivative of the log-mel spectrograms (64 rows x 431 colums image)
 
-``` python extract_embedding.py data/annotations.csv data features  ```
+``` python extract_mel.py data/annotations.csv data features  ```
 
 This transforms the sounds in the repository 'data' using the file 'annotations.csv' and store them in the repository 'features'
 
