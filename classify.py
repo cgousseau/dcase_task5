@@ -246,11 +246,11 @@ class Metrics(keras.callbacks.Callback):
         print(round(s,4))
     
         if y_val.shape[1]>8:
-            if s>0.05:
+            if s>0.65:
                 os.makedirs('bestmodels/fine', exist_ok=True)
                 self.model.save('bestmodels/fine/model'+str(round(s,4))+'.hdf5')
         else:
-            if s>0.05:
+            if s>0.80:
                 os.makedirs('bestmodels/coarse', exist_ok=True)
                 self.model.save('bestmodels/coarse/model'+str(round(s,4))+'.hdf5')            
             
